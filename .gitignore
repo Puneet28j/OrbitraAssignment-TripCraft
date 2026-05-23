@@ -1,0 +1,79 @@
+# ══════════════════════════════════════════════════════
+# Orbitra (TripCraft) — Root Git Ignore
+# ══════════════════════════════════════════════════════
+
+# ── Dependencies ─────────────────────────────────────
+node_modules/
+**/node_modules/
+
+# ── Production / Build Outputs ────────────────────────
+dist/
+**/dist/
+build/
+**/build/
+out/
+**/out/
+dist-ssr/
+**/dist-ssr/
+.next/
+**/.next/
+
+# ── Environment & Secrets ─────────────────────────────
+# Block all .env files, but keep .env.example tracked
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+**/.env
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+!.env.example
+!**/ .env.example
+
+# ── Logs ──────────────────────────────────────────────
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+pino-*.log
+
+# ── OS / System Files ─────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── IDEs and Editors ──────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# ── Testing & Coverage ────────────────────────────────
+coverage/
+**/coverage/
+.nyc_output/
+
+# ── Diagnostics & Temporary Caches ────────────────────
+.eslintcache
+.parcel-cache
+.cache/
+.vite/
+.turbo/
