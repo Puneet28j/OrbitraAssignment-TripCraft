@@ -10,7 +10,7 @@ import type { Server } from "node:http";
 
 let server: Server | undefined;
 
-process.on("uncaughtException", (err) => {
+process.on("uncaughtException", (err: Error) => {
   logger.fatal({ err }, "UNCAUGHT EXCEPTION — Server shutting down");
   process.exit(1);
 });

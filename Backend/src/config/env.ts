@@ -65,7 +65,7 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-const env = Object.freeze(parsed.data);
+const env = Object.freeze(parsed.data!);
 
 export type Env = typeof env;
 export default env;

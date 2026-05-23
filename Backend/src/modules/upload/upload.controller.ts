@@ -148,7 +148,7 @@ export const uploadDocuments = asyncHandler(
 
     if (req.files && Array.isArray(req.files) && req.files.length > 0) {
       const created = await Promise.all(
-        req.files.map(async (file) => {
+        (req.files as any[]).map(async (file: any) => {
           const isPDF = file.mimetype === "application/pdf";
           const fileType: FileType = isPDF ? "pdf" : "image";
           const resourceType = isPDF ? "raw" : "image";
@@ -183,7 +183,7 @@ export const uploadDocuments = asyncHandler(
       );
 
       documents.push(...created);
-      enqueueExtractions(created.map((d) => d._id));
+      enqueueExtractions(created.map((d: any) => d._id));
     } else if (
       req.body?.documents &&
       Array.isArray(req.body.documents)

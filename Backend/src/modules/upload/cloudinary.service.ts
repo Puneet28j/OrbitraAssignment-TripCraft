@@ -63,7 +63,7 @@ export async function uploadBuffer(
       }
     );
 
-    uploadStream.end(buffer);
+    (uploadStream as any).end(buffer);
   });
 }
 
