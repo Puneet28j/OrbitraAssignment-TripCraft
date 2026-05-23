@@ -8,7 +8,7 @@ import type { Types } from "mongoose";
 export const REFRESH_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
   secure: env.NODE_ENV === "production",
-  sameSite: "strict",
+  sameSite: env.NODE_ENV === "production" ? "none" : "lax",
   maxAge: 7 * 24 * 60 * 60 * 1000,
   path: "/",
 };
@@ -80,7 +80,7 @@ export function clearRefreshCookie(res: Response): void {
   res.clearCookie("refreshToken", {
     httpOnly: true,
     secure: env.NODE_ENV === "production",
-    sameSite: "strict",
+    sameSite: env.NODE_ENV === "production" ? "none" : "lax",
     path: "/",
   });
 }

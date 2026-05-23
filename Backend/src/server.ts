@@ -29,6 +29,20 @@ async function startServer() {
     logger.info(`API URL: http://localhost:${env.PORT}/api/v1`);
   });
 
+  // Render Free Tier Keep-Alive: Ping self every 12 minutes to prevent spinning down
+  const selfUrl = process.env.RENDER_EXTERNAL_URL;
+  if (selfUrl) {
+    logger.info(`Keep-alive self-pinging activated for: ${selfUrl}`);
+    setInterval(async () => {
+      try {
+        const res = await fetch(`${selfUrl}/health`);
+        logger.info({ status: res.status }, "Keep-alive self-ping succeeded");
+      } catch (err) {
+        logger.warn({ err }, "Keep-alive self-ping failed");
+      }
+    }, 14 * 60 * 1000); // 14 minutes (Render sleep threshold is 15 minutes)
+  }
+
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutting down");
     await terminateOcrWorker();
