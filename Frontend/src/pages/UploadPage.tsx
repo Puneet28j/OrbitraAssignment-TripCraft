@@ -57,11 +57,23 @@ export const UploadPage = () => {
     return () => clearInterval(interval);
   }, [isGenerating]);
 
-  // Determine if generation is allowed
   const readyDocuments = uploads.filter(
-    (u) => u.status === "ready" && !!u.documentId
+    (u) =>
+      u.status === "ready" &&
+      !!u.documentId &&
+      (u.extractedText?.trim().length ?? 0) > 0
   );
-  const isGenerationDisabled = readyDocuments.length === 0 || isGenerating;
+  const waitingOnText = uploads.filter(
+    (u) =>
+      u.status === "ready" &&
+      !!u.documentId &&
+      !(u.extractedText?.trim().length ?? 0)
+  );
+  const stillProcessing = uploads.filter(
+    (u) => u.status === "processing" || u.status === "uploading"
+  );
+  const isGenerationDisabled =
+    readyDocuments.length === 0 || isGenerating || stillProcessing.length > 0;
 
   const toggleTextCollapse = (id: string) => {
     setCollapsedTextItems((prev) => ({
@@ -124,6 +136,26 @@ export const UploadPage = () => {
         {generationError && (
           <Alert variant="destructive">
             <AlertDescription>{generationError}</AlertDescription>
+          </Alert>
+        )}
+
+        {stillProcessing.length > 0 && (
+          <Alert>
+            <AlertDescription>
+              {stillProcessing.length === 1
+                ? "1 document is still extracting text. Wait until all documents are ready before generating."
+                : `${stillProcessing.length} documents are still extracting text. Wait until all are ready before generating.`}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {waitingOnText.length > 0 && (
+          <Alert variant="destructive">
+            <AlertDescription>
+              {waitingOnText.length === 1
+                ? "1 document is marked ready but has no extracted text. Remove it and re-upload, or wait for extraction to finish."
+                : `${waitingOnText.length} documents are marked ready but have no extracted text. Re-upload or wait for extraction.`}
+            </AlertDescription>
           </Alert>
         )}
 
@@ -207,7 +239,9 @@ export const UploadPage = () => {
                   : "Upload at least one document"}
               </p>
               <p className="text-[11px] sm:text-xs text-muted-foreground">
-                Generate a day-by-day itinerary from extracted content.
+                {readyDocuments.length > 1
+                  ? `All ${readyDocuments.length} documents will be combined into one itinerary.`
+                  : "Generate a day-by-day itinerary from extracted content."}
               </p>
             </div>
             <Button

@@ -35,8 +35,9 @@ export interface DocumentStatusResponse {
   hasExtractedText: boolean;
   extractedText?: string | null;
   extractionMeta?: {
-    source?: "pdf-parse" | "tesseract-ocr";
+    source?: "pdf-parse" | "tesseract-ocr" | "hybrid";
     charCount?: number;
+    qualityScore?: number;
     processedAt?: string;
     durationMs?: number;
   } | null;

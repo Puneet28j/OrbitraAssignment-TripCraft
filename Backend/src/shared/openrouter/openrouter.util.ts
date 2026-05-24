@@ -80,15 +80,27 @@ export function mapAIError(error: unknown): ApiError {
 
 /* ── Core: Call OpenRouter ─────────────────────────── */
 
+export interface CallOpenRouterOptions {
+  maxTokens?: number;
+  temperature?: number;
+}
+
 /**
  * Send a chat-completion request to OpenRouter.
  * Returns the raw text content from the first choice.
  */
 export async function callOpenRouter(
   model: string,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  options?: CallOpenRouterOptions
 ): Promise<string> {
-  const body = { model, messages };
+  const body: Record<string, unknown> = { model, messages };
+  if (options?.maxTokens != null) {
+    body.max_tokens = options.maxTokens;
+  }
+  if (options?.temperature != null) {
+    body.temperature = options.temperature;
+  }
 
   logger.info({ model }, "Calling OpenRouter");
 

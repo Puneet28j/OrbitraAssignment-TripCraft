@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import Itinerary from "../../models/Itinerary.js";
 import Document from "../../models/Document.js";
 import * as aiService from "../ai/ai.service.js";
+import { prepareDocumentsForAI } from "../ai/documentInputs.util.js";
 import { generateUniqueShareToken } from "./shareToken.util.js";
 import {
   attachDocumentsToItineraries,
@@ -50,17 +51,12 @@ export const generateItinerary = asyncHandler(
       );
     }
 
-    const documentTexts = documents
-      .map((doc) => doc.extractedText)
-      .filter((text): text is string => !!text && text.trim().length > 0);
+    const documentsForAI = prepareDocumentsForAI(
+      documentIds,
+      documents
+    );
 
-    if (documentTexts.length === 0) {
-      throw ApiError.badRequest(
-        "No text content extracted from the provided documents"
-      );
-    }
-
-    const aiResult = await aiService.generateItinerary(documentTexts);
+    const aiResult = await aiService.generateItinerary(documentsForAI);
 
     const parsedStartDate = aiResult.startDate
       ? new Date(aiResult.startDate)

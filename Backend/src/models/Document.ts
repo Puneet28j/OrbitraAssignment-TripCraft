@@ -26,8 +26,9 @@ export interface IDocument {
   status: DocumentStatus;
   errorMessage?: string | null;
   extractionMeta?: {
-    source?: "pdf-parse" | "tesseract-ocr";
+    source?: "pdf-parse" | "tesseract-ocr" | "hybrid";
     charCount?: number;
+    qualityScore?: number;
     processedAt?: Date;
     durationMs?: number;
   } | null;
@@ -107,8 +108,12 @@ const documentSchema = new mongoose.Schema<IDocumentDocument>(
       default: null,
     },
     extractionMeta: {
-      source: { type: String, enum: ["pdf-parse", "tesseract-ocr"] },
+      source: {
+        type: String,
+        enum: ["pdf-parse", "tesseract-ocr", "hybrid"],
+      },
       charCount: { type: Number },
+      qualityScore: { type: Number },
       processedAt: { type: Date },
       durationMs: { type: Number },
     },

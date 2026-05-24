@@ -1,14 +1,18 @@
 import Document from "../../models/Document.js";
 import ApiError from "../../shared/errors/ApiError.js";
 import { extractTextFromPdfBuffer } from "../../shared/ocr/pdf.util.js";
-import { extractTextFromImageBuffer } from "../../shared/ocr/tesseract.util.js";
+import { extractTextFromImageBufferRobust } from "../../shared/ocr/tesseract.util.js";
+import {
+  isUsableExtractedText,
+  scoreExtractedText,
+} from "../../shared/ocr/textQuality.util.js";
 import * as cloudinaryService from "./cloudinary.service.js";
 import { runPool } from "../../shared/utils/runPool.js";
 import env from "../../config/env.js";
 import logger from "../../shared/logger.js";
 import type { Types } from "mongoose";
 
-export type ExtractionSource = "pdf-parse" | "tesseract-ocr";
+export type ExtractionSource = "pdf-parse" | "tesseract-ocr" | "hybrid";
 
 const pendingIds: Types.ObjectId[] = [];
 let isDraining = false;
@@ -17,7 +21,9 @@ export function enqueueExtraction(documentId: Types.ObjectId | string) {
   enqueueExtractions([documentId as Types.ObjectId]);
 }
 
-export function enqueueExtractions(documentIds: Array<Types.ObjectId | string>) {
+export function enqueueExtractions(
+  documentIds: Array<Types.ObjectId | string>
+) {
   for (const id of documentIds) {
     pendingIds.push(id as Types.ObjectId);
   }
@@ -63,7 +69,11 @@ async function extractTextFromDocument(
     publicId: string;
     resourceType: "raw" | "image";
   }
-): Promise<{ text: string; source: ExtractionSource }> {
+): Promise<{
+  text: string;
+  source: ExtractionSource;
+  qualityScore: number;
+}> {
   const buffer = await cloudinaryService.downloadAssetBuffer({
     publicId: doc.publicId,
     resourceType: doc.resourceType,
@@ -72,12 +82,16 @@ async function extractTextFromDocument(
   });
 
   if (fileType === "pdf") {
-    const text = await extractTextFromPdfBuffer(buffer);
-    return { text, source: "pdf-parse" };
+    const { text, source, qualityScore } = await extractTextFromPdfBuffer(buffer);
+    return { text, source, qualityScore };
   }
 
-  const text = await extractTextFromImageBuffer(buffer);
-  return { text, source: "tesseract-ocr" };
+  const text = await extractTextFromImageBufferRobust(buffer);
+  return {
+    text,
+    source: "tesseract-ocr",
+    qualityScore: scoreExtractedText(text),
+  };
 }
 
 export async function extractDocumentTextInBackground(
@@ -94,16 +108,19 @@ export async function extractDocumentTextInBackground(
       errorMessage: null,
     });
 
-    const { text, source } = await extractTextFromDocument(doc.fileType, {
-      cloudinaryUrl: doc.cloudinaryUrl,
-      publicId: doc.publicId,
-      resourceType: doc.resourceType,
-    });
+    const { text, source, qualityScore } = await extractTextFromDocument(
+      doc.fileType,
+      {
+        cloudinaryUrl: doc.cloudinaryUrl,
+        publicId: doc.publicId,
+        resourceType: doc.resourceType,
+      }
+    );
 
-    if (!text || text.length < 10) {
+    if (!isUsableExtractedText(text)) {
       throw new ApiError(
         422,
-        "No readable text was found. Use a clearer scan or a text-based PDF."
+        "Could not read enough text from this file. Upload a clearer photo or a text-based PDF (not a blurry scan)."
       );
     }
 
@@ -114,6 +131,7 @@ export async function extractDocumentTextInBackground(
       extractionMeta: {
         source,
         charCount: text.length,
+        qualityScore,
         processedAt: new Date(),
         durationMs: Date.now() - startedAt,
       },
@@ -133,8 +151,8 @@ export async function extractDocumentTextInBackground(
       error instanceof ApiError
         ? error.message
         : error instanceof Error
-          ? error.message
-          : "Unknown extraction error";
+        ? error.message
+        : "Unknown extraction error";
 
     logger.error(
       { documentId, err: message, durationMs: Date.now() - startedAt },
