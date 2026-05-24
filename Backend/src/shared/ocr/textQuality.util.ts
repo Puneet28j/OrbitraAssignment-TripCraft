@@ -2,7 +2,7 @@
 const PAGE_MARKER_PATTERN = /^\s*--\s*\d+\s+of\s+\d+\s*--\s*$/gim;
 
 /** Minimum quality score for extraction to be considered usable. */
-export const MIN_TEXT_QUALITY_SCORE = 55;
+export const MIN_TEXT_QUALITY_SCORE = 40;
 
 export function stripPageMarkers(text: string): string {
   return text.replace(PAGE_MARKER_PATTERN, "").trim();

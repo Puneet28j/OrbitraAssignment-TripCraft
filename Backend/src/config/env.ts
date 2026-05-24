@@ -38,6 +38,20 @@ const envSchema = z.object({
   /** Parallel document text extractions (PDF + OCR) */
   EXTRACTION_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(3),
 
+  /** fast = 1 OCR pass (quicker uploads); robust = multi-pass OCR (slower, best accuracy) */
+  EXTRACTION_MODE: z.enum(["fast", "robust"]).default("fast"),
+
+  /** Max tokens for itinerary JSON output (lower = faster on free models) */
+  OPENROUTER_MAX_OUTPUT_TOKENS: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .max(16384)
+    .default(4200),
+
+  /** How many OpenRouter models to try before failing (1 = fastest on free tier) */
+  OPENROUTER_MAX_MODELS: z.coerce.number().int().min(1).max(5).default(1),
+
   CLIENT_URL: z
     .string()
     .url("CLIENT_URL must be a valid URL")

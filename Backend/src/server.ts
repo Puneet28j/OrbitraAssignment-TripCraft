@@ -29,7 +29,7 @@ async function startServer() {
     logger.info(`API URL: http://localhost:${env.PORT}/api/v1`);
   });
 
-  // Render Free Tier Keep-Alive: Ping self every 12 minutes to prevent spinning down
+  // Render Free Tier Keep-Alive: Ping self every 14 minutes to prevent spinning down
   const selfUrl = process.env.RENDER_EXTERNAL_URL;
   if (selfUrl) {
     logger.info(`Keep-alive self-pinging activated for: ${selfUrl}`);

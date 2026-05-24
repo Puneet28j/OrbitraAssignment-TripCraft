@@ -56,6 +56,31 @@ export function formatFileSize(bytes: number): string {
  * @param {number | string | null} duration - Duration in minutes or raw string
  * @returns {string}
  */
+/**
+ * Short destination for cards/badges (avoids multi-city strings overflowing on mobile).
+ */
+export function formatDestinationShort(
+  destination: string | null | undefined,
+  maxLen = 36
+): string {
+  if (!destination?.trim()) return 'Unknown';
+
+  const cleaned = destination.replace(/\s+/g, ' ').trim();
+  if (cleaned.length <= maxLen) return cleaned;
+
+  const segments = cleaned
+    .split(/\s*(?:–|—|,|&|\|)\s*|\s+to\s+/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (segments.length > 2) {
+    const head = `${segments[0]} → ${segments[1]}`;
+    return head.length <= maxLen ? head : `${head.slice(0, maxLen - 1)}…`;
+  }
+
+  return `${cleaned.slice(0, maxLen - 1)}…`;
+}
+
 export function formatDuration(duration: number | string | null): string {
   if (duration === null || duration === undefined) return '';
   

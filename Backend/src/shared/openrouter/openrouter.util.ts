@@ -11,8 +11,8 @@ const FALLBACK_MODELS = [
   "deepseek/deepseek-v4-flash:free",
   "google/gemma-4-31b-it:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
+  "qwen/qwen3:free",
 ];
-
 const MAX_RETRIES_PER_MODEL = 2;
 const INITIAL_BACKOFF_MS = 2_000;
 
@@ -145,15 +145,24 @@ export async function callOpenRouter(
 /**
  * Retry with exponential backoff per model, then fall through to the next.
  */
+export interface AIResilienceOptions {
+  label?: string;
+  /** Cap how many models to try (default: full chain). */
+  maxModels?: number;
+  /** Retries per model on transient errors (default: MAX_RETRIES_PER_MODEL). */
+  maxRetriesPerModel?: number;
+}
+
 export async function withAIResilience<T>(
   operation: (modelName: string) => Promise<T>,
-  options?: { label?: string }
+  options?: AIResilienceOptions
 ): Promise<T> {
-  const models = getModelChain();
+  const models = getModelChain().slice(0, options?.maxModels ?? undefined);
+  const retriesPerModel = options?.maxRetriesPerModel ?? MAX_RETRIES_PER_MODEL;
   let lastError: unknown;
 
   for (const modelName of models) {
-    for (let attempt = 0; attempt < MAX_RETRIES_PER_MODEL; attempt++) {
+    for (let attempt = 0; attempt < retriesPerModel; attempt++) {
       try {
         if (attempt > 0 || modelName !== models[0]) {
           logger.info(
@@ -165,15 +174,19 @@ export async function withAIResilience<T>(
       } catch (error) {
         lastError = error;
 
-        const errMsg =
-          error instanceof Error ? error.message : String(error);
+        const errMsg = error instanceof Error ? error.message : String(error);
         logger.warn(
-          { modelName, attempt: attempt + 1, error: errMsg, label: options?.label },
+          {
+            modelName,
+            attempt: attempt + 1,
+            error: errMsg,
+            label: options?.label,
+          },
           "AI request failed"
         );
 
         const canRetry =
-          isTransientError(error) && attempt < MAX_RETRIES_PER_MODEL - 1;
+          isTransientError(error) && attempt < retriesPerModel - 1;
 
         if (!canRetry) break;
 

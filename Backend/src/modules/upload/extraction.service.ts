@@ -5,7 +5,15 @@ import { extractTextFromImageBufferRobust } from "../../shared/ocr/tesseract.uti
 import {
   isUsableExtractedText,
   scoreExtractedText,
+  MIN_TEXT_QUALITY_SCORE,
 } from "../../shared/ocr/textQuality.util.js";
+import {
+  extractTravelFacts,
+  mergeBarcodeIntoFacts,
+} from "../ai/travelFacts.util.js";
+import type { TravelFacts } from "../ai/travelFacts.types.js";
+import { computeDocumentFingerprint } from "../../shared/ocr/fingerprint.util.js";
+import { decodeBarcodesFromBuffer } from "../../shared/ocr/barcodeDecoder.util.js";
 import * as cloudinaryService from "./cloudinary.service.js";
 import { runPool } from "../../shared/utils/runPool.js";
 import env from "../../config/env.js";
@@ -13,6 +21,8 @@ import logger from "../../shared/logger.js";
 import type { Types } from "mongoose";
 
 export type ExtractionSource = "pdf-parse" | "tesseract-ocr" | "hybrid";
+
+/* ── Queue ──────────────────────────────────────────── */
 
 const pendingIds: Types.ObjectId[] = [];
 let isDraining = false;
@@ -62,6 +72,24 @@ async function drainQueue() {
   }
 }
 
+function fingerprintSummaryFromFacts(facts: TravelFacts): string {
+  return JSON.stringify({
+    kind: facts.documentKind,
+    hotels: facts.hotels.map((h) =>
+      [h.hotel, h.checkIn, h.checkOut, h.hotelConfirmation].join("|")
+    ),
+    flights: facts.flights.map((f) =>
+      [f.from, f.to, f.flightNumber, f.pnr, f.date].join("|")
+    ),
+    trains: facts.trains.map((t) =>
+      [t.from, t.to, t.trainNumber, t.date].join("|")
+    ),
+    refs: facts.bookingRefs.slice(0, 6),
+  });
+}
+
+/* ── OCR / PDF text extraction ─────────────────────── */
+
 async function extractTextFromDocument(
   fileType: "pdf" | "image",
   doc: {
@@ -73,6 +101,7 @@ async function extractTextFromDocument(
   text: string;
   source: ExtractionSource;
   qualityScore: number;
+  buffer: Buffer;
 }> {
   const buffer = await cloudinaryService.downloadAssetBuffer({
     publicId: doc.publicId,
@@ -82,8 +111,8 @@ async function extractTextFromDocument(
   });
 
   if (fileType === "pdf") {
-    const { text, source, qualityScore } = await extractTextFromPdfBuffer(buffer);
-    return { text, source, qualityScore };
+    const pdfResult = await extractTextFromPdfBuffer(buffer);
+    return { ...pdfResult, buffer };
   }
 
   const text = await extractTextFromImageBufferRobust(buffer);
@@ -91,8 +120,11 @@ async function extractTextFromDocument(
     text,
     source: "tesseract-ocr",
     qualityScore: scoreExtractedText(text),
+    buffer,
   };
 }
+
+/* ── Main extraction pipeline (single pass) ────────── */
 
 export async function extractDocumentTextInBackground(
   documentId: Types.ObjectId | string
@@ -108,21 +140,51 @@ export async function extractDocumentTextInBackground(
       errorMessage: null,
     });
 
-    const { text, source, qualityScore } = await extractTextFromDocument(
-      doc.fileType,
-      {
+    const { text, source, qualityScore, buffer } =
+      await extractTextFromDocument(doc.fileType, {
         cloudinaryUrl: doc.cloudinaryUrl,
         publicId: doc.publicId,
         resourceType: doc.resourceType,
-      }
-    );
+      });
 
     if (!isUsableExtractedText(text)) {
       throw new ApiError(
         422,
-        "Could not read enough text from this file. Upload a clearer photo or a text-based PDF (not a blurry scan)."
+        "Could not read enough text from this file. Upload a clearer photo or a text-based PDF."
       );
     }
+
+    let structuredFacts = extractTravelFacts(text);
+
+    const barcodeDetections = await decodeBarcodesFromBuffer(
+      buffer,
+      doc.fileType
+    ).catch(() => []);
+
+    if (barcodeDetections.length > 0) {
+      structuredFacts = mergeBarcodeIntoFacts(
+        structuredFacts,
+        barcodeDetections.map((d) => d.data)
+      );
+    }
+
+    const extractionIssues: string[] = [];
+
+    if (qualityScore < MIN_TEXT_QUALITY_SCORE) {
+      extractionIssues.push(
+        `Low text quality (${Math.round(qualityScore)}). Consider uploading a clearer image.`
+      );
+    }
+
+    const fingerprint = computeDocumentFingerprint(
+      fingerprintSummaryFromFacts(structuredFacts)
+    );
+    const existing = await Document.findOne({
+      userId: doc.userId,
+      "extractionMeta.fingerprint": fingerprint,
+      _id: { $ne: documentId },
+    }).select("_id");
+    const duplicateOf = existing ? existing._id : undefined;
 
     await Document.findByIdAndUpdate(documentId, {
       extractedText: text,
@@ -132,6 +194,17 @@ export async function extractDocumentTextInBackground(
         source,
         charCount: text.length,
         qualityScore,
+        fingerprint,
+        duplicateOf,
+        classificationConfidence:
+          structuredFacts.classificationConfidence ?? null,
+        extractionIssues: extractionIssues.length ? extractionIssues : undefined,
+        structuredFacts,
+        barcodeDetections: barcodeDetections.length
+          ? barcodeDetections
+          : undefined,
+        voucherCount:
+          structuredFacts.voucherCount ?? structuredFacts.hotels.length,
         processedAt: new Date(),
         durationMs: Date.now() - startedAt,
       },
@@ -141,7 +214,9 @@ export async function extractDocumentTextInBackground(
       {
         documentId,
         source,
+        kind: structuredFacts.documentKind,
         charCount: text.length,
+        barcodes: barcodeDetections.length,
         durationMs: Date.now() - startedAt,
       },
       "Document extraction complete"

@@ -13,7 +13,6 @@ export const API_ENDPOINTS = Object.freeze({
     BATCH: '/upload/batch',
     BY_ID: (id: string) => `/upload/${id}`,
     STATUS: (id: string) => `/upload/${id}/status`,
-    VIEW_URL: (id: string) => `/upload/${id}/view-url`,
     CONTENT: (id: string) => `/upload/${id}/content`,
   },
   ITINERARY: {

@@ -89,6 +89,10 @@
   --shadow-lg: var(--tw-shadow-lg);
   --shadow-accent: var(--tw-shadow-accent);
 
+  /* ── Accordion animations ──────────────────────────── */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
   /* ── TripCraft transition tokens ───────────────────── */
   --ease-out: var(--tw-ease-out);
   --ease-bounce: var(--tw-ease-bounce);
@@ -307,6 +311,24 @@
 /* ═══════════════════════════════════════════════════════
    Keyframes
    ═══════════════════════════════════════════════════════ */
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
 @keyframes fadeUp {
   from {
     opacity: 0;

@@ -53,6 +53,7 @@ export function UploadQueuePanel({ uploads, onRemove }: UploadQueuePanelProps) {
               error={item.error}
               fileSize={item.fileSize}
               fileType={item.fileType}
+              documentId={item.documentId}
               thumbnailUrl={item.thumbnailUrl}
               previewUrl={item.previewUrl}
               onRemove={onRemove}

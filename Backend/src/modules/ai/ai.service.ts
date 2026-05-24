@@ -1,4 +1,5 @@
 import ApiError from "../../shared/errors/ApiError.js";
+import env from "../../config/env.js";
 import {
   withAIResilience,
   callOpenRouter,
@@ -6,118 +7,127 @@ import {
   type ChatMessage,
 } from "../../shared/openrouter/openrouter.util.js";
 import { safeJsonParse, validateItineraryResponse } from "./ai.utils.js";
+import { enrichItineraryFromFacts } from "./itineraryEnrichment.util.js";
+import { ensureAllBookingsCovered } from "./itineraryCoverage.util.js";
+import {
+  buildMasterBookingInventory,
+  formatMasterInventoryForPrompt,
+  type MasterBookingInventory,
+} from "./mergedFacts.util.js";
 import type { ItineraryResponse } from "./itinerary.schema.js";
 import type { DocumentForAI } from "./documentInputs.util.js";
 import logger from "../../shared/logger.js";
 
-/** Per-document cap to keep multi-doc prompts within model context. */
-const MAX_CHARS_PER_DOCUMENT = 12_000;
-const ITINERARY_MAX_TOKENS = 8192;
-
-const SYSTEM_PROMPT = `You are TripCraft AI, an expert travel planner and storyteller. You turn raw travel documents into rich, premium, day-by-day itineraries that feel personal, vivid, and practical — like a concierge wrote them.
-
-Your output must be ONLY a raw JSON object matching the target schema.
-DO NOT wrap the response in markdown blocks (e.g. no \`\`\`json ... \`\`\`), no preamble, no explanations, no text before or after the JSON object.
-
-DOCUMENT FACTS (CRITICAL — never violate):
-1. Every flight, hotel, train, and confirmed booking from the documents MUST appear as activities with correct times, locations, and bookingRef when provided.
-2. Never invent confirmation numbers, voucher codes, prices, seat numbers, gates, or dates that are not in the documents.
-3. If a detail is missing in the documents, use null — do not guess.
+const SYSTEM_PROMPT = `You are TripCraft AI. Merge ALL uploaded documents into ONE chronological itinerary. Output ONLY raw JSON.
 
 MULTI-DOCUMENT (CRITICAL):
-1. Merge ALL documents into ONE chronological trip. Include every booking from every document.
-2. If documents span different cities or dates (e.g. flight to Rio + hotel in Jaipur), structure days to cover the full journey in order.
+- You receive a MASTER BOOKING INVENTORY plus one block per uploaded file.
+- Every checklist item (H1, F1, T1, B1…) from EVERY file must appear — never drop a leg because another doc has hotels.
+- One PDF with 4 hotel vouchers = H1, H2, H3, H4 (each with its own city, dates, check-in/out) — never collapse into a single hotel stay.
+- Different files may be different regions (e.g. Paris flight + Rajasthan hotels) — include ALL places in order.
 
-RICHNESS & DETAIL (CRITICAL — this is what makes TripCraft special):
-1. Aim for 5–8 activities per active travel day (days with flights, check-ins, or major moves). Quieter days: at least 3–4 activities.
-2. Write evocative day titles (e.g. "Wheels Up: Paris to Rio", "Arrival & Amber City Check-in").
-3. Each activity needs:
-   - title: short, specific headline (not generic)
-   - description: 2–4 sentences — practical tips, atmosphere, what to expect, local context. Be creative and warm but factual.
-   - time: use document times when available; otherwise infer sensible times (e.g. arrive airport 2h before flight, check-in at hotel check-in time from voucher)
-   - location: city, airport, hotel name, or neighborhood when known
-   - duration: when relevant (e.g. "3h 30m" for flight, "1 night" for hotel stay)
-4. Expand around documented events with logical, place-aware activities:
-   - Flight day: pre-departure (packing, leave for airport), airport check-in/security, boarding, in-flight, arrival, immigration/baggage, transfer to hotel or next leg
-   - Hotel check-in day: arrival transfer, check-in, room settle, included meals (breakfast/dinner from voucher), evening rest or light local stroll
-   - Between documented bookings: suggest 1–2 iconic sightseeing or dining options for THAT city (well-known landmarks/areas only — no fake tickets; bookingRef must be null for suggestions)
-5. Use destination knowledge: for Jaipur suggest Amber Fort, Hawa Mahal, local Rajasthani cuisine; for Rio suggest Copacabana, Christ the Redeemer area — as optional exploration, not booked tours.
-6. summary: 2–3 polished sentences capturing the trip arc and highlights.
-7. Match tone to the trip: business-like for tight connections; relaxed for resort stays.
+TITLE & DESTINATION:
+- title: memorable trip name mentioning key regions (e.g. "Paris to Rio & Rajasthan Heritage").
+- destination: full route label listing major places in travel order, joined with " → " (up to 120 chars). Example: "Paris → Rio de Janeiro → Jaipur → Jodhpur".
+- summary: 2–3 sentences naming every major city/hotel/flight from the inventory.
 
-LOGICAL RULES:
-1. Activities within each day in strict chronological order.
-2. Activity type must be one of: flight, hotel, transport, sightseeing, dining, activity, other.
-3. Times in 24h format when possible ("08:10", "14:00").
-4. Parse all dates from documents; assign each activity to the correct day.
+DAY HEADERS:
+- Each day title must name the city or route (e.g. "Flight Paris to Rio", "Check-in — Jaipur Heritage Hotel", "Train Delhi to Agra").
 
-TARGET SCHEMA:
-{
-  "title": "String (catchy trip title)",
-  "destination": "String (primary destination or multi-city label)",
-  "startDate": "YYYY-MM-DD or null",
-  "endDate": "YYYY-MM-DD or null",
-  "summary": "String (2–3 sentence premium overview)",
-  "days": [
-    {
-      "dayNumber": Number,
-      "date": "YYYY-MM-DD or null",
-      "title": "String (evocative theme for the day)",
-      "activities": [
-        {
-          "time": "String or null",
-          "type": "flight | hotel | transport | sightseeing | dining | activity | other",
-          "title": "String",
-          "description": "String (2–4 detailed sentences)",
-          "location": "String or null",
-          "bookingRef": "String or null (only from documents)",
-          "duration": "String or null"
-        }
-      ]
-    }
-  ]
-}`;
+ACTIVITIES (DETAILED):
+- Booking days (flight, hotel check-in/out): 5–7 timed activities each with specific titles.
+- Transfer days: 4–6 activities.
+- EVERY activity needs:
+  - title: specific (hotel name, flight number, station names — not "Stay" or "Activity").
+  - description: 1–2 sentences using facts from docs (guest name, confirmation/PNR, gate, seat, room type, meals, times).
+  - location: city, airport, hotel name, or station from the documents (never null when known in inventory).
+  - bookingRef: confirmation, PNR, or voucher when available.
+- NEVER use room amenity text (toiletries, kettle, Wi-Fi, "Room Facilities") as a city, location, or day title.
 
-const RETRY_PROMPT_SUFFIX = `
+DATES:
+- Use check-in/check-out and flight dates from inventory; do not invent dates.
+- Align hotel and flight days correctly across documents.
 
-RETRY: Your previous response failed validation. Return ONLY valid JSON matching the schema. Include all document bookings plus rich contextual activities. Do not invent booking references.`;
+SCHEMA:
+{"title":"string","destination":"string","startDate":"YYYY-MM-DD|null","endDate":"YYYY-MM-DD|null","summary":"string","days":[{"dayNumber":number,"date":"YYYY-MM-DD|null","title":"string","activities":[{"time":"string|null","type":"flight|hotel|transport|sightseeing|dining|activity|other","title":"string","description":"string","location":"string|null","bookingRef":"string|null","duration":"string|null"}]}]}`;
 
-function truncateDocumentText(text: string, label: string): string {
-  if (text.length <= MAX_CHARS_PER_DOCUMENT) return text;
-  logger.warn(
-    { label, originalLength: text.length, max: MAX_CHARS_PER_DOCUMENT },
-    "Truncating document text for AI prompt"
-  );
-  return `${text.slice(0, MAX_CHARS_PER_DOCUMENT)}\n\n[Text truncated for length…]`;
-}
+const RETRY_PROMPT_SUFFIX =
+  "\n\nRETRY: Include EVERY checklist item from ALL documents. Each activity must have location + detailed description from facts. Valid JSON only.";
 
 function buildDocumentPromptSection(documents: DocumentForAI[]): string {
-  const count = documents.length;
   return documents
     .map((doc, i) => {
-      const body = truncateDocumentText(doc.text, doc.originalName);
-      return `--- DOCUMENT ${i + 1} of ${count}: "${doc.originalName}" (${doc.fileType.toUpperCase()}) ---\n${body}`;
+      return `=== DOCUMENT ${i + 1}/${documents.length}: "${doc.originalName}" (${doc.fileType}) ===\n${doc.promptText}`;
     })
     .join("\n\n");
 }
 
+function hasStructuredBookings(inventory: MasterBookingInventory): boolean {
+  return (
+    inventory.hotelCount +
+      inventory.flightCount +
+      inventory.trainCount +
+      inventory.transportCount >
+    0
+  );
+}
+
+/** Scale output budget for multi-doc / multi-booking trips without always using max cap. */
+function resolveOutputTokenBudget(
+  documents: DocumentForAI[],
+  inventory: MasterBookingInventory
+): number {
+  const bookingTotal =
+    inventory.hotelCount +
+    inventory.flightCount +
+    inventory.trainCount +
+    inventory.transportCount;
+  const scaled =
+    env.OPENROUTER_MAX_OUTPUT_TOKENS +
+    documents.length * 550 +
+    bookingTotal * 100;
+  return Math.min(Math.max(scaled, env.OPENROUTER_MAX_OUTPUT_TOKENS), 6500);
+}
+
 async function callAI(
   documents: DocumentForAI[],
-  isRetry: boolean
+  inventory: MasterBookingInventory,
+  inventoryPrompt: string,
+  retryMode: "none" | "retry",
+  maxTokens: number
 ): Promise<string> {
-  const userPrompt = `Create ONE detailed, creative, unified itinerary from ALL ${documents.length} documents below.
+  logger.info(
+    {
+      documentCount: documents.length,
+      hotels: inventory.hotelCount,
+      flights: inventory.flightCount,
+      trains: inventory.trainCount,
+      transports: inventory.transportCount,
+      maxTokens,
+      promptChars:
+        inventoryPrompt.length +
+        documents.reduce((n, d) => n + d.promptText.length, 0),
+    },
+    "Itinerary AI prompt"
+  );
 
-Requirements:
-- Include EVERY flight, hotel, and booking from every document (correct times, refs, locations).
-- Build 5–8 activities on major travel days; fill gaps with logical transport, meals, and destination-appropriate suggestions.
-- Write rich 2–4 sentence descriptions for each activity.
-- Use evocative day titles and a polished summary.
+  const retrySuffix =
+    retryMode === "retry" ? RETRY_PROMPT_SUFFIX : "";
+
+  const multiNote =
+    documents.length > 1
+      ? `\nYou have ${documents.length} separate files — merge every booking from every file into one timeline. Use destination "CityA → CityB → …" listing all regions.\n`
+      : "";
+
+  const userPrompt = `Build ONE unified itinerary from ${documents.length} separate uploaded file(s).${multiNote}
+
+${inventoryPrompt}
 
 ${buildDocumentPromptSection(documents)}
 
-Return only valid JSON matching the schema.${
-    isRetry ? RETRY_PROMPT_SUFFIX : ""
-  }`;
+Before finishing, verify every checklist item (H1, H2, … F1, …) appears with correct dates, locations, and booking references.
+
+Return JSON only.${retrySuffix}`;
 
   const messages: ChatMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -127,52 +137,89 @@ Return only valid JSON matching the schema.${
   return withAIResilience(
     async (modelName) =>
       callOpenRouter(modelName, messages, {
-        maxTokens: ITINERARY_MAX_TOKENS,
-        temperature: 0.55,
+        maxTokens,
+        temperature: 0.34,
       }),
-    { label: "itinerary-generation" }
+    {
+      label: "itinerary-generation",
+      maxModels: env.OPENROUTER_MAX_MODELS,
+      maxRetriesPerModel: 1,
+    }
   );
 }
 
 export async function generateItinerary(
   documents: DocumentForAI[]
 ): Promise<ItineraryResponse> {
-  if (!documents || documents.length === 0) {
+  if (!documents?.length) {
     throw ApiError.badRequest(
       "No document text provided for AI itinerary generation"
     );
   }
 
-  logger.info(
-    {
-      documentCount: documents.length,
-      names: documents.map((d) => d.originalName),
-    },
-    "Generating itinerary from documents"
-  );
+  const inventory = buildMasterBookingInventory(documents);
+  const inventoryPrompt = formatMasterInventoryForPrompt(inventory);
+  const hasBookings = hasStructuredBookings(inventory);
+  const maxTokens = resolveOutputTokenBudget(documents, inventory);
 
-  const attempts = [false, true];
+  if (!hasBookings) {
+    logger.warn(
+      { documentCount: documents.length },
+      "No structured bookings extracted; relying on raw OCR"
+    );
+  }
+
+  const attempts: Array<"none" | "retry"> = hasBookings
+    ? ["none", "retry"]
+    : ["none"];
 
   for (let i = 0; i < attempts.length; i += 1) {
-    const isRetry = attempts[i];
+    const retryMode = attempts[i];
     try {
-      const responseText = await callAI(documents, isRetry);
+      const responseText = await callAI(
+        documents,
+        inventory,
+        inventoryPrompt,
+        retryMode,
+        maxTokens
+      );
       const parsedOutput = safeJsonParse(responseText);
-      return validateItineraryResponse(parsedOutput);
+      const validated = validateItineraryResponse(parsedOutput);
+      const covered = ensureAllBookingsCovered(validated, inventory);
+      const enriched = enrichItineraryFromFacts(covered, documents, inventory);
+
+      logger.info(
+        {
+          documentCount: documents.length,
+          hotels: inventory.hotelCount,
+          flights: inventory.flightCount,
+          trains: inventory.trainCount,
+          transports: inventory.transportCount,
+          maxTokens,
+          days: enriched.days.length,
+          totalActivities: enriched.days.reduce(
+            (n, d) => n + d.activities.length,
+            0
+          ),
+        },
+        "Itinerary generated"
+      );
+
+      return enriched;
     } catch (error) {
       const isValidationError =
         error instanceof ApiError && error.statusCode === 422;
       const hasAnotherAttempt = i < attempts.length - 1;
 
-      if (isValidationError && hasAnotherAttempt) {
-        logger.warn("AI itinerary validation failed, retrying once");
+      if (isValidationError && hasAnotherAttempt && hasBookings) {
+        logger.warn(
+          { retryMode },
+          "AI itinerary validation failed, retrying with a stricter prompt"
+        );
         continue;
       }
 
-      if (error instanceof ApiError) {
-        throw error;
-      }
-
+      if (error instanceof ApiError) throw error;
       throw mapAIError(error);
     }
   }

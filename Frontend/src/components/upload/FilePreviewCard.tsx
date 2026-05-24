@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useState } from "react";
 import {
   FileText,
   ImageIcon,
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { uploadService } from "@/services/uploadService";
 import type { DocumentFileType } from "@/types/document";
 
 interface FilePreviewCardProps {
@@ -22,6 +23,7 @@ interface FilePreviewCardProps {
   error?: string;
   fileSize?: number;
   fileType?: DocumentFileType;
+  documentId?: string;
   thumbnailUrl?: string | null;
   previewUrl?: string | null;
   onRemove: (id: string) => void;
@@ -58,27 +60,67 @@ export const FilePreviewCard = ({
   error,
   fileSize,
   fileType,
+  documentId,
   thumbnailUrl,
-  previewUrl: providedPreviewUrl,
+  previewUrl: cloudinaryPreviewUrl,
   onRemove,
 }: FilePreviewCardProps) => {
   const isPDF = file.type === "application/pdf" || fileType === "pdf";
   const isImage = file.type.startsWith("image/") || fileType === "image";
   const config = STATUS_CONFIG[status];
 
-  const previewUrl = useMemo(() => {
-    if (providedPreviewUrl) return providedPreviewUrl;
-    if (thumbnailUrl) return thumbnailUrl;
-    if (!isImage) return null;
-    return URL.createObjectURL(file);
-  }, [file, isImage, providedPreviewUrl, thumbnailUrl]);
+  const [localObjectUrl, setLocalObjectUrl] = useState<string | null>(null);
+  const [authPreviewUrl, setAuthPreviewUrl] = useState<string | null>(null);
+  const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
-    if (providedPreviewUrl || thumbnailUrl) return;
+    if (!isImage || file.size === 0) {
+      setLocalObjectUrl(null);
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    setLocalObjectUrl(url);
+    setImageFailed(false);
+
+    return () => URL.revokeObjectURL(url);
+  }, [file, isImage]);
+
+  useEffect(() => {
+    if (!isImage || !documentId || file.size > 0) {
+      return;
+    }
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    uploadService
+      .fetchDocumentPreviewUrl(documentId)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        objectUrl = url;
+        setAuthPreviewUrl(url);
+        setImageFailed(false);
+      })
+      .catch(() => {
+        if (!cancelled) setImageFailed(true);
+      });
+
     return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [previewUrl, providedPreviewUrl, thumbnailUrl]);
+  }, [documentId, file.size, isImage]);
+
+  const displayPreviewUrl =
+    !imageFailed &&
+    (localObjectUrl ||
+      cloudinaryPreviewUrl ||
+      authPreviewUrl ||
+      (thumbnailUrl && file.size === 0 ? thumbnailUrl : null));
 
   const showIndeterminate = status === "processing";
 
@@ -86,13 +128,12 @@ export const FilePreviewCard = ({
     <article
       className={cn(
         "group relative overflow-hidden rounded-xl border bg-card transition-colors",
-        status === "ready" && "border-primary/25 bg-destructive/3",
-        status === "failed" && "border-destructive/30 bg-destructive/3",
+        status === "ready" && "border-primary/25 bg-primary/5",
+        status === "failed" && "border-destructive/30 bg-destructive/5",
         status !== "ready" && status !== "failed" && "border-border"
       )}
     >
       <div className="flex items-start gap-2.5 p-2.5 sm:gap-3 sm:p-3">
-        {/* Thumbnail */}
         <div
           className={cn(
             "relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border sm:h-12 sm:w-12",
@@ -103,11 +144,12 @@ export const FilePreviewCard = ({
         >
           {isPDF ? (
             <FileText className="h-5 w-5 text-primary" aria-hidden />
-          ) : previewUrl ? (
+          ) : displayPreviewUrl ? (
             <img
-              src={previewUrl}
+              src={displayPreviewUrl}
               alt=""
               className="h-full w-full object-cover"
+              onError={() => setImageFailed(true)}
             />
           ) : (
             <ImageIcon className="h-5 w-5 text-muted-foreground" aria-hidden />
@@ -119,7 +161,6 @@ export const FilePreviewCard = ({
           )}
         </div>
 
-        {/* Meta */}
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 pr-1">

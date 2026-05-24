@@ -7,6 +7,7 @@ import {
   pickBestExtractedText,
   scoreExtractedText,
 } from "./textQuality.util.js";
+import { isFastExtraction } from "./extractionMode.js";
 
 export type PdfExtractionSource = "pdf-parse" | "tesseract-ocr" | "hybrid";
 
@@ -18,7 +19,7 @@ export interface PdfExtractionResult {
 
 const MAX_PDF_PAGES = 20;
 const PDF_PAGE_CONCURRENCY = 2;
-const OCR_RENDER_SCALE = 2.5;
+const OCR_RENDER_SCALE = isFastExtraction() ? 2 : 2.5;
 const OCR_HIGH_RES_SCALE = 3.5;
 
 type PageMethod = "pdf-parse" | "tesseract-ocr";
@@ -62,7 +63,7 @@ async function extractPdfPage(
 
   let ocrText = await ocrPdfPage(parser, pageNum, OCR_RENDER_SCALE);
 
-  if (!isUsableExtractedText(ocrText)) {
+  if (!isFastExtraction() && !isUsableExtractedText(ocrText)) {
     const highResText = await ocrPdfPage(parser, pageNum, OCR_HIGH_RES_SCALE);
     ocrText = pickBestExtractedText([
       { text: ocrText, label: "standard" },

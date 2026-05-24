@@ -290,37 +290,6 @@ export const getUnassignedDocuments = asyncHandler(
   }
 );
 
-export const getDocumentViewUrl = asyncHandler(
-  async (req: Request, res: Response) => {
-    if (!req.user) {
-      throw ApiError.unauthorized("Not authenticated");
-    }
-
-    const { id } = req.params;
-    const doc = await Document.findOne(
-      { _id: id, userId: req.user._id },
-      "originalName fileType publicId resourceType"
-    );
-
-    if (!doc) {
-      throw ApiError.notFound("Document not found or access denied");
-    }
-
-    const viewUrl = cloudinaryService.getSignedViewUrl(
-      doc.publicId,
-      doc.resourceType,
-      doc.fileType
-    );
-
-    ApiResponse.ok("Document view URL generated", {
-      id: doc._id,
-      originalName: doc.originalName,
-      fileType: doc.fileType,
-      viewUrl,
-    }).send(res);
-  }
-);
-
 /** Stream document bytes for in-app preview (PDF iframe / image). */
 export const streamDocumentContent = asyncHandler(
   async (req: Request, res: Response) => {

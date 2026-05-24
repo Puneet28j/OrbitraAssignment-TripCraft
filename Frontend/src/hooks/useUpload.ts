@@ -47,10 +47,11 @@ function mapDocumentStatusToUpload(
 
 function unassignedToUploadItem(doc: UnassignedDocument): UploadItem {
   const uploadStatus = mapDocumentStatusToUpload(doc.status);
+  const isComplete = uploadStatus === "ready";
   return {
     id: `restored-${doc._id}`,
     file: new File([], doc.originalName, { type: doc.mimeType }),
-    progress: uploadStatus === "ready" ? 100 : 0,
+    progress: isComplete ? 100 : 0,
     status: uploadStatus,
     documentId: doc._id,
     extractedText: doc.extractedText ?? undefined,
@@ -92,17 +93,19 @@ export const useUpload = () => {
       uploadId: string,
       status: "ready" | "failed",
       errorMessage?: string,
-      extractedText?: string
+      extractedText?: string,
+      extractionIssues?: string[]
     ) => {
+      const isComplete = status === "ready";
       setUploads((prev) =>
         prev.map((item) =>
           item.id === uploadId
             ? {
                 ...item,
                 status,
-                progress: status === "ready" ? 100 : item.progress,
+                progress: isComplete ? 100 : item.progress,
                 error: status === "failed" ? errorMessage : undefined,
-                ...(status === "ready" && extractedText !== undefined
+                ...(isComplete && extractedText !== undefined
                   ? { extractedText }
                   : {}),
               }
@@ -110,8 +113,14 @@ export const useUpload = () => {
         )
       );
 
+      if (status === "ready" && extractionIssues?.length) {
+        toast.warning("Extraction completed with warnings", {
+          description: extractionIssues[0],
+        });
+      }
+
       if (batchTotals.current) {
-        if (status === "ready") {
+        if (isComplete) {
           batchTotals.current.ready += 1;
         } else {
           batchTotals.current.failed += 1;
@@ -173,11 +182,17 @@ export const useUpload = () => {
             pendingByDocId.current.delete(docId);
             delete pollCounts.current[docId];
             delete pollErrors.current[docId];
+            const issues = (
+              statusData.extractionMeta as
+                | { extractionIssues?: string[] }
+                | undefined
+            )?.extractionIssues;
             markUploadFromStatus(
               uploadId,
               "ready",
               undefined,
-              statusData.extractedText ?? ""
+              statusData.extractedText ?? "",
+              issues
             );
           } else if (statusData.status === "failed") {
             pendingByDocId.current.delete(docId);
@@ -398,10 +413,20 @@ export const useUpload = () => {
 
           cloudinaryByUploadId.set(item.id, cloudinaryResult);
 
+          const isImageUpload =
+            item.file.type.startsWith("image/") || item.fileType === "image";
+
           setUploads((prev) =>
             prev.map((u) =>
               u.id === item.id
-                ? { ...u, status: "processing", progress: 100 }
+                ? {
+                    ...u,
+                    status: "processing",
+                    progress: 100,
+                    ...(isImageUpload
+                      ? { previewUrl: cloudinaryResult.url }
+                      : {}),
+                  }
                 : u
             )
           );
@@ -479,6 +504,7 @@ export const useUpload = () => {
                     status:
                       savedDoc.status === "ready" ? "ready" : "processing",
                     extractedText: savedDoc.extractedText || "",
+                    thumbnailUrl: savedDoc.thumbnailUrl ?? u.thumbnailUrl,
                   }
                 : u
             )

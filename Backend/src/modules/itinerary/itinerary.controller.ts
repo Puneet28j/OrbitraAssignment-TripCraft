@@ -12,6 +12,7 @@ import ApiResponse from "../../shared/http/ApiResponse.js";
 import ApiError from "../../shared/errors/ApiError.js";
 import asyncHandler from "../../shared/middleware/asyncHandler.js";
 import env from "../../config/env.js";
+import logger from "../../shared/logger.js";
 import type { z } from "zod";
 import type { listItineraryQuerySchema } from "./itinerary.schema.js";
 
@@ -42,7 +43,9 @@ export const generateItinerary = asyncHandler(
       );
     }
 
-    const notReadyDocs = documents.filter((doc) => doc.status !== "ready");
+    const notReadyDocs = documents.filter(
+      (doc) => doc.status !== "ready"
+    );
     if (notReadyDocs.length > 0) {
       throw ApiError.badRequest(
         `Some documents are not ready for generation. Statuses: ${notReadyDocs
@@ -55,6 +58,22 @@ export const generateItinerary = asyncHandler(
       documentIds,
       documents
     );
+
+    logger.info(
+      {
+        documentIds: documentIds.length,
+        prepared: documentsForAI.length,
+        hotels: documentsForAI.reduce((n, d) => n + d.facts.hotels.length, 0),
+        flights: documentsForAI.reduce((n, d) => n + d.facts.flights.length, 0),
+      },
+      "Generating itinerary from documents"
+    );
+
+    if (documentsForAI.length !== documentIds.length) {
+      throw ApiError.badRequest(
+        "Some documents could not be prepared for generation."
+      );
+    }
 
     const aiResult = await aiService.generateItinerary(documentsForAI);
 

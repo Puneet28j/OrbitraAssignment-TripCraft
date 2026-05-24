@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Share2, Printer, Calendar, MapPin } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Share2, Printer, Calendar, MapPin, RefreshCw } from 'lucide-react';
 import { useItineraryQuery } from '@/hooks/queries/useItineraryQuery';
+import { useGenerateItineraryMutation } from '@/hooks/mutations/useGenerateItineraryMutation';
 import { getErrorMessage } from '@/lib/apiError';
 import { ROUTES } from '@/lib/constants';
 import { formatDate } from '@/lib/formatters';
@@ -17,8 +18,27 @@ import { ErrorState } from '@/components/common/ErrorState';
 
 export const ItineraryDetailPage = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { data: itinerary, isLoading, isError, error, refetch } = useItineraryQuery(id);
+  const generateMutation = useGenerateItineraryMutation();
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [regenerateError, setRegenerateError] = useState('');
+
+  const sourceDocumentIds =
+    itinerary?.documentIds ??
+    itinerary?.documents?.map((d) => d._id) ??
+    [];
+
+  const handleRegenerate = async () => {
+    if (sourceDocumentIds.length === 0) return;
+    setRegenerateError('');
+    try {
+      const next = await generateMutation.mutateAsync(sourceDocumentIds);
+      navigate(ROUTES.ITINERARY_DETAIL_FN(next._id));
+    } catch (err: unknown) {
+      setRegenerateError(getErrorMessage(err, 'Failed to regenerate itinerary.'));
+    }
+  };
 
   if (isLoading) return <Loader variant="fullPage" />;
 
@@ -56,6 +76,18 @@ export const ItineraryDetailPage = () => {
             </Link>
           </Button>
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {sourceDocumentIds.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2.5"
+                disabled={generateMutation.isPending}
+                onClick={() => void handleRegenerate()}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${generateMutation.isPending ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">Regenerate</span>
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -76,6 +108,10 @@ export const ItineraryDetailPage = () => {
             </Button>
           </div>
         </div>
+
+        {regenerateError && (
+          <p className="text-sm text-destructive no-print">{regenerateError}</p>
+        )}
 
         <Card>
           <CardContent className="pt-4 pb-4 sm:pt-6 sm:pb-6 space-y-2.5 sm:space-y-4">

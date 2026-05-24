@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { useItineraryHistoryQuery } from '../hooks/queries/useItineraryHistoryQuery';
 import { useDeleteItineraryMutation } from '../hooks/mutations/useDeleteItineraryMutation';
 import { ROUTES } from '../lib/constants';
-import { formatDate } from '../lib/formatters';
+import { formatDate, formatDestinationShort } from '../lib/formatters';
 import Layout from '../components/layout/Layout';
 import Loader from '../components/common/Loader';
 import type { Itinerary } from '../types/itinerary';
@@ -101,9 +101,16 @@ export const HistoryPage = () => {
                 <Card key={itinerary._id}
                   className="p-5 flex flex-col justify-between h-48 relative group hover:border-primary/30 transition-colors">
                   <div className="space-y-2">
-                    <div className="flex items-start justify-between gap-4">
-                      <Badge variant="secondary" className="gap-1 text-[10px] uppercase tracking-wider">
-                        <MapPin className="h-3 w-3" />{itinerary.destination}
+                    <div className="flex items-start justify-between gap-3 min-w-0">
+                      <Badge
+                        variant="secondary"
+                        className="gap-1 text-[10px] uppercase tracking-wider max-w-[85%] min-w-0 shrink"
+                        title={itinerary.destination}
+                      >
+                        <MapPin className="h-3 w-3 shrink-0" />
+                        <span className="truncate">
+                          {formatDestinationShort(itinerary.destination, 32)}
+                        </span>
                       </Badge>
                       <button type="button" onClick={(e) => { e.stopPropagation(); setDeletingId(itinerary._id); }}
                         className="p-1.5 rounded border border-border hover:border-destructive/30 hover:bg-destructive/10 text-muted hover:text-destructive transition duration-fast active:scale-95" title="Delete itinerary">

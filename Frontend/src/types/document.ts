@@ -1,4 +1,8 @@
-export type DocumentStatus = "uploading" | "processing" | "ready" | "failed";
+export type DocumentStatus =
+  | "uploading"
+  | "processing"
+  | "ready"
+  | "failed";
 export type DocumentFileType = "pdf" | "image";
 
 /** Document linked to a generated trip/itinerary */
@@ -38,6 +42,7 @@ export interface DocumentStatusResponse {
     source?: "pdf-parse" | "tesseract-ocr" | "hybrid";
     charCount?: number;
     qualityScore?: number;
+    extractionIssues?: string[];
     processedAt?: string;
     durationMs?: number;
   } | null;

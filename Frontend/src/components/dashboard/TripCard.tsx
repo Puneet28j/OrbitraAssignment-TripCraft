@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Calendar, FileText, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
-import { formatDate } from '@/lib/formatters';
+import { formatDate, formatDestinationShort } from '@/lib/formatters';
 import { ROUTES } from '@/lib/constants';
 import type { Itinerary } from '@/types/itinerary';
 import { TripDocumentsList } from '@/components/itinerary/TripDocumentsList';
@@ -37,9 +37,14 @@ export function TripCard({ itinerary, className }: TripCardProps) {
 
             {/* Metadata Row */}
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1 font-medium text-foreground">
-                <MapPin className="h-3.5 w-3.5 text-muted-foreground/75" />
-                {itinerary.destination}
+              <span
+                className="inline-flex items-center gap-1 font-medium text-foreground min-w-0 max-w-full"
+                title={itinerary.destination}
+              >
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground/75" />
+                <span className="truncate">
+                  {formatDestinationShort(itinerary.destination, 40)}
+                </span>
               </span>
               
               {itinerary.startDate && (

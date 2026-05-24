@@ -27,8 +27,20 @@ export interface IDocument {
   errorMessage?: string | null;
   extractionMeta?: {
     source?: "pdf-parse" | "tesseract-ocr" | "hybrid";
+    voucherCount?: number;
     charCount?: number;
+    fingerprint?: string | null;
+    duplicateOf?: Types.ObjectId | null;
+    barcodeDetections?: Array<{
+      type: string;
+      data: string;
+      format: string;
+      bbox?: { x: number; y: number; width: number; height: number };
+    }>;
+    classificationConfidence?: number;
+    extractionIssues?: string[];
     qualityScore?: number;
+    structuredFacts?: Record<string, unknown> | null;
     processedAt?: Date;
     durationMs?: number;
   } | null;
@@ -112,8 +124,15 @@ const documentSchema = new mongoose.Schema<IDocumentDocument>(
         type: String,
         enum: ["pdf-parse", "tesseract-ocr", "hybrid"],
       },
+      voucherCount: { type: Number },
       charCount: { type: Number },
+      fingerprint: { type: String, index: true },
+      duplicateOf: { type: mongoose.Schema.Types.ObjectId, ref: "Document" },
+      classificationConfidence: { type: Number },
+      barcodeDetections: { type: mongoose.Schema.Types.Mixed, default: undefined },
+      extractionIssues: { type: [String], default: undefined },
       qualityScore: { type: Number },
+      structuredFacts: { type: mongoose.Schema.Types.Mixed, default: null },
       processedAt: { type: Date },
       durationMs: { type: Number },
     },

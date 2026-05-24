@@ -26,7 +26,6 @@ router.post(
 router.post("/", upload.any(), uploadController.uploadDocuments);
 router.get("/", uploadController.getDocuments);
 router.get("/unassigned", uploadController.getUnassignedDocuments);
-router.get("/:id/view-url", uploadController.getDocumentViewUrl);
 router.get("/:id/content", uploadController.streamDocumentContent);
 router.get("/:id/status", uploadController.getDocumentStatus);
 router.delete("/:id", uploadController.deleteDocument);

@@ -52,7 +52,7 @@ export function ItineraryTimeline({ itinerary, showDayTabs = true }: ItineraryTi
       className={cn(
         'space-y-4 sm:space-y-6',
         hasDayTabs &&
-          'pb-[calc(9.5rem+env(safe-area-inset-bottom,0px))] sm:pb-0'
+          'pb-[calc(9.5rem+env(safe-area-inset-bottom,0))] sm:pb-0'
       )}
     >
       {hasDayTabs && (
@@ -77,7 +77,7 @@ export function ItineraryTimeline({ itinerary, showDayTabs = true }: ItineraryTi
             <div
               key={day.dayNumber}
               className={cn(
-                'space-y-3 sm:space-y-5',
+                'space-y-3 sm:space-y-5 mb-8 sm:mb-10 last:mb-0',
                 isDayVisible ? 'block' : 'hidden print:block'
               )}
             >

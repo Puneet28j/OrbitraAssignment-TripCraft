@@ -2,6 +2,7 @@ import { createWorker, PSM, type Worker } from "tesseract.js";
 import sharp from "sharp";
 import logger from "../logger.js";
 import { pickBestExtractedText } from "./textQuality.util.js";
+import { isFastExtraction } from "./extractionMode.js";
 
 let workerPromise: Promise<Worker> | null = null;
 
@@ -76,12 +77,15 @@ export async function extractTextFromImageBufferRobust(
   if (!buffer?.length) return "";
 
   const worker = await getWorker();
+
   const passes: Array<{ preprocess: (b: Buffer) => Promise<Buffer>; psm: PSM }> =
-    [
-      { preprocess: preprocessImageForOcr, psm: PSM.AUTO },
-      { preprocess: preprocessDocumentScanForOcr, psm: PSM.SINGLE_BLOCK },
-      { preprocess: preprocessDocumentScanForOcr, psm: PSM.SPARSE_TEXT },
-    ];
+    isFastExtraction()
+      ? [{ preprocess: preprocessDocumentScanForOcr, psm: PSM.SINGLE_BLOCK }]
+      : [
+          { preprocess: preprocessImageForOcr, psm: PSM.AUTO },
+          { preprocess: preprocessDocumentScanForOcr, psm: PSM.SINGLE_BLOCK },
+          { preprocess: preprocessDocumentScanForOcr, psm: PSM.SPARSE_TEXT },
+        ];
 
   const candidates: Array<{ text: string; label: string }> = [];
 

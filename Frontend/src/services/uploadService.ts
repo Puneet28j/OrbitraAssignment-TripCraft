@@ -166,18 +166,6 @@ export const uploadService = {
     return URL.createObjectURL(blob);
   },
 
-  async getDocumentViewUrl(id: string) {
-    const response = await axiosInstance.get(
-      API_ENDPOINTS.UPLOAD.VIEW_URL(id)
-    );
-    return response.data.data as {
-      id: string;
-      originalName: string;
-      fileType: "pdf" | "image";
-      viewUrl: string;
-    };
-  },
-
   async getDocumentStatus(id: string) {
     const response = await axiosInstance.get<ApiSuccessResponse<DocumentStatusResponse>>(
       API_ENDPOINTS.UPLOAD.STATUS(id)
